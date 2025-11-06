@@ -80,9 +80,9 @@ def run() -> None:
     rag = VLMGraphRAGPipeline(neo4j_uri, neo4j_auth, llm_model)
 
     user_question = (
-        "can you list 10 walls in the first floor and their positions knowing that there might be "
-        "several walls in the building with different wall types according to ifc standard? "
-        "Please don't provide any code just use the available data you have"
+        "can you list 134 doors in the building and their positions"
+        "if you don't know please say I don't know based on the provided data"
+        "Please don't provide any code just use the available data you have, in case the number doesn't match the data you have just provide the available data"
     )
 
     cypher = rag.gen_cypher(user_question)
