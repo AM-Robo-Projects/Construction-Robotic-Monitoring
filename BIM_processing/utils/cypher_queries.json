@@ -1,0 +1,166 @@
+[
+  {
+    "name": "general_contains_paths",
+    "description": "Explore general CONTAINS relationships between IFC elements with all node and relationship properties.",
+    "keywords": ["graph", "explore", "contains", "relationships", "path"],
+    "cypher": "MATCH p = ()-[:CONTAINS]->()\nRETURN\n  [n IN nodes(p) | {elementId: elementId(n), labels: labels(n), props: properties(n)}] AS nodes,\n  [r IN relationships(p) | {elementId: elementId(r), type: type(r), props: properties(r)}] AS rels\nLIMIT 600"
+  },
+  {
+    "name": "all_doors_full_props",
+    "description": "Retrieve all IfcDoor elements with their complete property maps.",
+    "keywords": ["door", "doors", "ifcdoor"],
+    "cypher": "MATCH (d:IfcDoor)\nRETURN\n  elementId(d) AS elementId,\n  labels(d) AS labels,\n  properties(d) AS props\nLIMIT 200"
+  },
+  {
+    "name": "all_windows_full_props",
+    "description": "Retrieve all IfcWindow elements with their complete property maps.",
+    "keywords": ["window", "windows", "ifcwindow"],
+    "cypher": "MATCH (w:IfcWindow)\nRETURN\n  elementId(w) AS elementId,\n  labels(w) AS labels,\n  properties(w) AS props\nLIMIT 200"
+  },
+  {
+    "name": "windows_contains_all_props",
+    "description": "Find windows contained in other elements (like walls or storeys) with all properties of both container and window.",
+    "keywords": ["window", "windows", "contains", "container", "wall", "storey"],
+    "cypher": "MATCH (container)-[:CONTAINS]->(window:IfcWindow)\nRETURN\n  elementId(container) AS containerElementId,\n  labels(container) AS containerLabels,\n  properties(container) AS containerProps,\n  elementId(window) AS windowElementId,\n  labels(window) AS windowLabels,\n  properties(window) AS windowProps"
+  },
+  {
+    "name": "windows_has_opening_all_props",
+    "description": "Find windows using HAS_OPENING relationship with complete property maps for both nodes and the relationship.",
+    "keywords": ["window", "windows", "has_opening", "opening", "wall"],
+    "cypher": "MATCH (container)-[rel:HAS_OPENING]->(window:IfcWindow)\nRETURN\n  elementId(container) AS containerElementId,\n  labels(container) AS containerLabels,\n  properties(container) AS containerProps,\n  elementId(rel) AS relElementId,\n  type(rel) AS relType,\n  properties(rel) AS relProps,\n  elementId(window) AS windowElementId,\n  labels(window) AS windowLabels,\n  properties(window) AS windowProps"
+  },
+  {
+    "name": "doors_contains_all_props",
+    "description": "Find doors contained in other elements (like rooms or walls) with all properties of both container and door.",
+    "keywords": ["door", "doors", "contains", "container", "room", "wall", "ifcdoor"],
+    "cypher": "MATCH (container)-[:CONTAINS]->(door:IfcDoor)\nRETURN\n  elementId(container) AS containerElementId,\n  labels(container) AS containerLabels,\n  properties(container) AS containerProps,\n  elementId(door) AS doorElementId,\n  labels(door) AS doorLabels,\n  properties(door) AS doorProps"
+  },
+  {
+    "name": "doors_has_opening_all_props",
+    "description": "Find doors connected through HAS_OPENING relationships, returning full property maps for container, door, and relationship.",
+    "keywords": ["door", "doors", "has_opening", "opening", "wall", "ifcdoor"],
+    "cypher": "MATCH (container)-[rel:HAS_OPENING]->(door:IfcDoor)\nRETURN\n  elementId(container) AS containerElementId,\n  labels(container) AS containerLabels,\n  properties(container) AS containerProps,\n  elementId(rel) AS relElementId,\n  type(rel) AS relType,\n  properties(rel) AS relProps,\n  elementId(door) AS doorElementId,\n  labels(door) AS doorLabels,\n  properties(door) AS doorProps"
+  },
+  {
+    "name": "count_ifc_elements",
+    "description": "Count all IFC elements grouped by their IFC type.",
+    "keywords": ["count", "elements", "ifctype", "statistics", "summary"],
+    "cypher": "MATCH (n)\nWHERE n.ifcType IS NOT NULL\nRETURN n.ifcType AS type, count(n) AS count\nORDER BY count DESC"
+  },
+  {
+    "name": "all_walls_full_props",
+    "description": "Retrieve all IfcWall and IfcWallStandardCase elements with complete property maps.",
+    "keywords": ["wall", "walls", "ifcwall", "ifcwallstandardcase"],
+    "cypher": "MATCH (w)\nWHERE 'IfcWall' IN labels(w) OR 'IfcWallStandardCase' IN labels(w)\nRETURN elementId(w) AS elementId, labels(w) AS labels, properties(w) AS props\nLIMIT 300"
+  },
+  {
+    "name": "walls_contains_all_props",
+    "description": "Find walls contained in other elements (e.g., storeys) with all properties of both container and wall.",
+    "keywords": ["wall", "contains", "storey", "hierarchy"],
+    "cypher": "MATCH (container)-[:CONTAINS]->(wall)\nWHERE 'IfcWall' IN labels(wall) OR 'IfcWallStandardCase' IN labels(wall)\nRETURN elementId(container) AS containerElementId, labels(container) AS containerLabels, properties(container) AS containerProps,\n       elementId(wall) AS wallElementId, labels(wall) AS wallLabels, properties(wall) AS wallProps"
+  },
+  {
+    "name": "walls_has_opening_all_props",
+    "description": "Walls with HAS_OPENING relationships to doors/windows, returning full properties for wall, opening relationship, and target element.",
+    "keywords": ["wall", "has_opening", "door", "window"],
+    "cypher": "MATCH (wall)-[rel:HAS_OPENING]->(target)\nWHERE ('IfcWall' IN labels(wall) OR 'IfcWallStandardCase' IN labels(wall)) AND ('IfcDoor' IN labels(target) OR 'IfcWindow' IN labels(target))\nRETURN elementId(wall) AS wallElementId, labels(wall) AS wallLabels, properties(wall) AS wallProps,\n       elementId(rel) AS relElementId, type(rel) AS relType, properties(rel) AS relProps,\n       elementId(target) AS targetElementId, labels(target) AS targetLabels, properties(target) AS targetProps"
+  },
+  {
+    "name": "all_spaces_full_props",
+    "description": "Retrieve all IfcSpace elements with complete properties.",
+    "keywords": ["space", "spaces", "ifcspace", "room"],
+    "cypher": "MATCH (s:IfcSpace)\nRETURN elementId(s) AS elementId, labels(s) AS labels, properties(s) AS props\nLIMIT 300"
+  },
+  {
+    "name": "spaces_contains_elements",
+    "description": "Elements contained in spaces (rooms), returning space and contained element properties.",
+    "keywords": ["space", "contains", "room", "elements"],
+    "cypher": "MATCH (space:IfcSpace)-[:CONTAINS]->(elem)\nRETURN elementId(space) AS spaceElementId, labels(space) AS spaceLabels, properties(space) AS spaceProps,\n       elementId(elem) AS elemElementId, labels(elem) AS elemLabels, properties(elem) AS elemProps"
+  },
+  {
+    "name": "spaces_adjacency",
+    "description": "Space-to-space adjacency via ADJACENT_TO (if present), including properties on both spaces and the relationship.",
+    "keywords": ["space", "adjacent", "adjacency", "topology"],
+    "cypher": "MATCH (a:IfcSpace)-[r:ADJACENT_TO]-(b:IfcSpace)\nRETURN elementId(a) AS spaceAId, labels(a) AS spaceALabels, properties(a) AS spaceAProps,\n       elementId(r) AS relElementId, type(r) AS relType, properties(r) AS relProps,\n       elementId(b) AS spaceBId, labels(b) AS spaceBLabels, properties(b) AS spaceBProps"
+  },
+  {
+    "name": "all_storeys_full_props",
+    "description": "Retrieve all IfcBuildingStorey nodes with full properties.",
+    "keywords": ["storey", "ifcbuildingstorey", "level", "floor"],
+    "cypher": "MATCH (st:IfcBuildingStorey)\nRETURN elementId(st) AS elementId, labels(st) AS labels, properties(st) AS props\nLIMIT 200"
+  },
+  {
+    "name": "storey_contains_elements",
+    "description": "For each storey, list contained elements and their full properties.",
+    "keywords": ["storey", "contains", "elements", "hierarchy"],
+    "cypher": "MATCH (st:IfcBuildingStorey)-[:CONTAINS]->(elem)\nRETURN elementId(st) AS storeyElementId, labels(st) AS storeyLabels, properties(st) AS storeyProps,\n       elementId(elem) AS elemElementId, labels(elem) AS elemLabels, properties(elem) AS elemProps"
+  },
+  {
+    "name": "building_hierarchy_paths",
+    "description": "Explore SITE → BUILDING → STOREY → ELEMENT containment chains with full node/rel properties.",
+    "keywords": ["hierarchy", "site", "building", "storey", "contains", "path"],
+    "cypher": "MATCH p = (site)-[:CONTAINS*1..4]->(elem)\nWHERE 'IfcSite' IN labels(site)\nRETURN [n IN nodes(p) | {elementId: elementId(n), labels: labels(n), props: properties(n)}] AS nodes,\n       [r IN relationships(p) | {elementId: elementId(r), type: type(r), props: properties(r)}] AS rels\nLIMIT 400"
+  },
+  {
+    "name": "elements_by_type_param",
+    "description": "Retrieve all elements of a given IFC type. Pass the type name (e.g., 'IfcColumn') as $type.",
+    "keywords": ["by-type", "parameterized", "generic"],
+    "cypher": "MATCH (n)\nWHERE n.ifcType = $type OR $type IN labels(n)\nRETURN elementId(n) AS elementId, labels(n) AS labels, properties(n) AS props\nLIMIT 300"
+  },
+  {
+    "name": "elements_with_materials",
+    "description": "Element-to-material links (HAS_MATERIAL) with full properties for both ends and the relationship.",
+    "keywords": ["material", "materials", "has_material"],
+    "cypher": "MATCH (e)-[r:HAS_MATERIAL]->(m)\nRETURN elementId(e) AS elemElementId, labels(e) AS elemLabels, properties(e) AS elemProps,\n       elementId(r) AS relElementId, type(r) AS relType, properties(r) AS relProps,\n       elementId(m) AS matElementId, labels(m) AS matLabels, properties(m) AS matProps"
+  },
+  {
+    "name": "structural_frame_elements",
+    "description": "Pull common structural elements (columns, beams, slabs) with full props.",
+    "keywords": ["structural", "column", "beam", "slab"],
+    "cypher": "MATCH (n)\nWHERE 'IfcColumn' IN labels(n) OR 'IfcBeam' IN labels(n) OR 'IfcSlab' IN labels(n)\nRETURN elementId(n) AS elementId, labels(n) AS labels, properties(n) AS props\nLIMIT 500"
+  },
+  {
+    "name": "vertical_circulation",
+    "description": "Retrieve stairs and ramps with their properties.",
+    "keywords": ["stair", "stairs", "ramp", "circulation"],
+    "cypher": "MATCH (n)\nWHERE 'IfcStair' IN labels(n) OR 'IfcRamp' IN labels(n)\nRETURN elementId(n) AS elementId, labels(n) AS labels, properties(n) AS props"
+  },
+  {
+    "name": "railings_with_hosts",
+    "description": "Railings and their host elements if CONNECTS_TO (or similar) is present.",
+    "keywords": ["railing", "handrail", "connects_to"],
+    "cypher": "MATCH (r:IfcRailing)\nOPTIONAL MATCH (r)-[rel:CONNECTS_TO]->(host)\nRETURN elementId(r) AS railingElementId, labels(r) AS railingLabels, properties(r) AS railingProps,\n       elementId(rel) AS relElementId, type(rel) AS relType, properties(rel) AS relProps,\n       elementId(host) AS hostElementId, labels(host) AS hostLabels, properties(host) AS hostProps"
+  },
+  {
+    "name": "spatial_boundaries",
+    "description": "Space boundary links (BOUNDED_BY) if present, including surfaces/walls delimiting spaces.",
+    "keywords": ["space", "boundary", "bounded_by"],
+    "cypher": "MATCH (s:IfcSpace)-[rel:BOUNDED_BY]->(b)\nRETURN elementId(s) AS spaceElementId, labels(s) AS spaceLabels, properties(s) AS spaceProps,\n       elementId(rel) AS relElementId, type(rel) AS relType, properties(rel) AS relProps,\n       elementId(b) AS boundaryElementId, labels(b) AS boundaryLabels, properties(b) AS boundaryProps"
+  },
+  {
+    "name": "name_search_contains_param",
+    "description": "Case-insensitive substring search on element names using parameter $q.",
+    "keywords": ["search", "name", "contains"],
+    "cypher": "MATCH (n)\nWHERE toLower(n.name) CONTAINS toLower($q)\nRETURN elementId(n) AS elementId, labels(n) AS labels, properties(n) AS props\nLIMIT 300"
+  },
+  {
+    "name": "count_by_label",
+    "description": "Count elements by top-level label (useful when ifcType is missing).",
+    "keywords": ["count", "label", "statistics"],
+    "cypher": "MATCH (n)\nWITH labels(n) AS lbs\nUNWIND lbs AS l\nRETURN l AS label, count(*) AS count\nORDER BY count DESC"
+  },
+  {
+    "name": "count_relationships_by_type",
+    "description": "Count relationships by type.",
+    "keywords": ["count", "relationships", "types"],
+    "cypher": "MATCH ()-[r]->()\nRETURN type(r) AS relType, count(*) AS count\nORDER BY count DESC"
+  },
+  {
+    "name": "elements_bbox_extents",
+    "description": "Compute min/max of common bounding box properties where present (rough model extents).",
+    "keywords": ["bbox", "extent", "geometry"],
+    "cypher": "MATCH (n)\nWITH n\nWHERE exists(n.boundingBoxMinX) AND exists(n.boundingBoxMaxX)\n   OR exists(n.props.boundingBoxMinX) AND exists(n.props.boundingBoxMaxX)\nWITH\n  coalesce(n.boundingBoxMinX, n.props.boundingBoxMinX) AS minX,\n  coalesce(n.boundingBoxMaxX, n.props.boundingBoxMaxX) AS maxX,\n  coalesce(n.boundingBoxMinY, n.props.boundingBoxMinY) AS minY,\n  coalesce(n.boundingBoxMaxY, n.props.boundingBoxMaxY) AS maxY,\n  coalesce(n.boundingBoxMinZ, n.props.boundingBoxMinZ) AS minZ,\n  coalesce(n.boundingBoxMaxZ, n.props.boundingBoxMaxZ) AS maxZ\nRETURN min(minX) AS globalMinX, max(maxX) AS globalMaxX,\n       min(minY) AS globalMinY, max(maxY) AS globalMaxY,\n       min(minZ) AS globalMinZ, max(maxZ) AS globalMaxZ"
+  }
+]
+
+
