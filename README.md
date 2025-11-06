@@ -1,115 +1,77 @@
-qa_chain = RetrievalQA.from_chain_type(llm, retriever)
-```
+# 🤖 Construction Robotic Monitoring
 
-The LLM receives:
-```
-Context:
-- Name: Main_Door | Type: IfcDoor
-- Name: Back_Door | Type: IfcDoor  
-- Building_Floor_1 -[HAS_OPENING]-> Door_123
-- Door_123 -[ADJACENT_TO]-> Wall_456
-
-Question: How many doors?
-
-Answer: Based on the context...
-```
+A modular framework for **robotic perception, navigation, and scene understanding** in construction environments.  
+This project bridges **Building Information Modeling (BIM)** data and **robotic AI systems**, enabling robots to reason about, navigate, and monitor construction sites using structured knowledge graphs derived from IFC models.
 
 ---
 
-## 🔑 **Key Concepts**
+## 🚀 Overview
 
-### **1. Embeddings (Vector Representations)**
-```
-Text: "red door"     → Vector: [0.2, -0.5, 0.8, ...]  (768 numbers)
-Text: "crimson gate" → Vector: [0.19, -0.48, 0.82, ...] (similar!)
-Text: "blue window"  → Vector: [-0.3, 0.7, -0.1, ...]  (different)
-```
+Construction-Robotic-Monitoring provides an end-to-end pipeline that:
 
-Similar meanings = similar vectors = found by similarity search
-
-### **2. Graph Relationships**
-```
-(Door)-[:HAS_OPENING]->(Room)
-(Door)-[:CONNECTS]->(Corridor)
-(Door)-[:PART_OF]->(Building)
-```
-
-Traditional search: finds "door"
-Graph search: finds "door + room + corridor + building"
-
-### **3. Hybrid Retrieval**
-- **Vector alone**: Might miss connected context
-- **Graph alone**: Might miss semantically similar nodes
-- **Combined**: Best of both worlds!
+1. **Parses IFC files** (using [IfcOpenShell](https://ifcopenshell.org/)) to extract detailed 3D building information.  
+2. **Converts BIM data** into a **Knowledge Graph** (nodes = building elements, edges = spatial/semantic relationships).  
+3. **Stores** and queries the graph efficiently using **Neo4j**.  
+4. **Integrates LLMs and Vision-Language Models (VLMs)** (e.g., via [Ollama](https://ollama.ai/)) for reasoning and question-answering over the building structure.  
+5. **Interfaces with ROS 2** for robotic tasks like monitoring, navigation, and environment awareness.
 
 ---
 
-## 🎬 **Real Example**
+## 🧩 Features
 
-**Question:** *"Show me emergency exits"*
-
-**Vector Search finds:**
-```
-- "Name: Exit_Door_1 | Type: IfcDoor | description: Emergency exit"
-- "Name: Fire_Exit_B | Type: IfcDoor"
-```
-
-**Graph Traversal adds:**
-```
-- Emergency_Exit_1 -[LEADS_TO]-> Stairwell_A
-- Stairwell_A -[CONNECTS_TO]-> Ground_Floor
-- Emergency_Exit_1 -[HAS_SIGN]-> Exit_Sign_Red
-- Emergency_Exit_1 -[PART_OF]-> Fire_Safety_System
-```
-
-**LLM synthesizes:**
-*"There are 2 emergency exits: Exit_Door_1 leads to Stairwell A which connects to the ground floor, and Fire_Exit_B is part of the fire safety system..."*
+- ✅ IFC-to- Knowledge Graph conversion with geometry, materials, and spatial relations  
+- ✅ Fast Neo4j querying via via Cypher and LLM  
+- ✅ LangChain-based integration with local LLMs (e.g., LLaMA 3, Qwen 2.5, Mistral)  
+- ✅ Visual and language-aware graph retrieval (VLM + Neo4j)  - GraphRAG
+- ✅ Modular design compatible with ROS 2 nodes  
+- ✅ IFC analytics: extract walls, doors, windows, storeys, and spatial connectivity  
 
 ---
 
-## 🔧 **Why This Architecture?**
+## 🏗️ System Architecture
 
-| Method | Strengths | Weaknesses |
-|--------|-----------|------------|
-| **Keyword Search** | Fast, exact matches | Misses synonyms, context |
-| **Vector Search** | Semantic understanding | No structural relationships |
-| **Graph Traversal** | Follows relationships | Needs starting point |
-| **GraphRAG** | All of the above! | More complex |
+      ┌──────────────────────────────┐
+      │        IFC Model (.ifc)      │
+      └──────────────┬───────────────┘
+                     │
+                     ▼
+        ┌────────────────────────────┐
+        │  IFC Parser (IfcOpenShell) │
+        └──────────────┬─────────────┘
+                       ▼
+        ┌────────────────────────────┐
+        │   Graph Extractor (Nodes,  │
+        │   Relationships, Geometry) │
+        └──────────────┬─────────────┘
+                       ▼
+            ┌──────────────────┐
+            │   Neo4j GraphDB  │
+            └───────┬──────────┘
+                    ▼
+    ┌────────────────────────────────────┐
+    │  LLM / VLM Reasoning via Ollama    │
+    │  (LangChain, GraphRAG Retrieval)   │
+    └────────────────────────────────────┘
+
 
 ---
 
-## 📊 **Data Flow Diagram**
-```
-User Question
-    ↓
-┌───────────────────────────────────────┐
-│  1. Embed Question (Ollama)           │
-│     "doors" → [0.3, -0.2, 0.9, ...]   │
-└───────────────────────────────────────┘
-    ↓
-┌───────────────────────────────────────┐
-│  2. Vector Search (Chroma)            │
-│     Find similar embeddings           │
-│     Returns: 4 door documents         │
-└───────────────────────────────────────┘
-    ↓
-┌───────────────────────────────────────┐
-│  3. Extract node_ids: [42, 87, ...]   │
-└───────────────────────────────────────┘
-    ↓
-┌───────────────────────────────────────┐
-│  4. Graph Traversal (Neo4j)           │
-│     MATCH (n)-[r]->(m) WHERE id(n)... │
-│     Returns: 20 relationship docs     │
-└───────────────────────────────────────┘
-    ↓
-┌───────────────────────────────────────┐
-│  5. Combine: 4 + 20 = 24 documents    │
-└───────────────────────────────────────┘
-    ↓
-┌───────────────────────────────────────┐
-│  6. LLM Generation (Ollama)           │
-│     Read all 24 docs, answer question │
-└───────────────────────────────────────┘
-    ↓
-Answer to User
+## ⚙️ Installation
+
+### Prerequisites
+- Python ≥ 3.10  
+- [IfcOpenShell](https://github.com/IfcOpenShell/IfcOpenShell)  
+- [Neo4j Desktop](https://neo4j.com/download/) or AuraDB  
+- [Ollama](https://ollama.ai) (for local LLMs)  
+- ROS 2 (optional, for robot integration)
+
+### Setup
+
+```bash
+git clone https://github.com/AM-Robo-Projects/Construction-Robotic-Monitoring.git
+cd Construction-Robotic-Monitoring
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+
