@@ -4,7 +4,7 @@ from typing import Optional, Dict, Any, List
 import ollama
 from langchain_ollama import OllamaLLM
 from neo4j import GraphDatabase
-
+import os
 
 class cypher_query_utils:
     def __init__(self, llm, neo4j_uri: str, neo4j_auth: tuple, vectorstore: Any):
@@ -15,7 +15,7 @@ class cypher_query_utils:
         self.vectorstore = vectorstore
         object.__setattr__(self, 'driver', GraphDatabase.driver(neo4j_uri, auth=neo4j_auth))
 
-    def load_saved_queries(self, path: str = "utils/cypher_queries.json") -> List[Dict[str, Any]]:
+    def load_saved_queries(self, path: str = "/home/grass/BIM_Navigation/src/RoboMonitoring/BIM_processing/utils/cypher_queries.json") -> List[Dict[str, Any]]:
         """Load saved Cypher queries from a JSON file."""
         try:
             with open(path, "r", encoding="utf-8") as f:

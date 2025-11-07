@@ -3,8 +3,11 @@ import json
 import ollama
 from typing import Any, Dict, List, Optional
 
+import os,sys 
+
 from langchain_ollama import OllamaLLM
-from utils.cypher_query_utils import cypher_query_utils
+
+from BIM_processing.utils.cypher_query_utils import cypher_query_utils
 
 
 class VLMGraphRAGPipeline:
@@ -12,8 +15,6 @@ class VLMGraphRAGPipeline:
         self.neo4j_uri = neo4j_uri
         self.neo4j_auth = neo4j_auth
         self.llm_model = llm_model
-
-        # IMPORTANT: pass a REAL LangChain LLM object (not a string) to cypher_query_utils
 
         self._cypher_llm = OllamaLLM(model="qwen2.5-coder:7b", temperature=0)
         self.cypher_utils = cypher_query_utils(
@@ -72,54 +73,70 @@ class VLMGraphRAGPipeline:
             return ""
 
 
-def run() -> None:
-    llm_model = "llama3.2-vision:11b"
-    neo4j_uri = "neo4j://127.0.0.1:7687"
-    neo4j_auth = ("neo4j", "riedelbau_model")
+    def run(self,model,user_question,image_path: Optional[str] = None):
+        
+        llm_model = model
+        neo4j_uri = "neo4j://127.0.0.1:7687"
+        neo4j_auth = ("neo4j", "riedelbau_model")
 
-    rag = VLMGraphRAGPipeline(neo4j_uri, neo4j_auth, llm_model)
+        #rag = VLMGraphRAGPipeline(neo4j_uri, neo4j_auth, llm_model)
 
-    user_question = (
-        "can you list 134 doors in the building and their positions"
-        "if you don't know please say I don't know based on the provided data"
-        "Please don't provide any code just use the available data you have, in case the number doesn't match the data you have just provide the available data"
-    )
+    
 
-    cypher = rag.gen_cypher(user_question)
-    if not cypher:
-        print("⚠️ Cypher generation failed (empty query). Check cypher_query_utils/model/prompt.")
-        return
+        cypher = self.gen_cypher(user_question)
+        if not cypher:
+            print("⚠️ Cypher generation failed (empty query). Check cypher_query_utils/model/prompt.")
+            return
 
-    print("🔎 Cypher:\n", cypher)
+        print("🔎 Cypher:\n", cypher)
 
-    try:
-        context_rows = rag.get_graph_context(cypher)
-    except Exception as e:
-        print(f"[Neo4j ERROR] {e}")
-        context_rows = []
+        try:
+            context_rows = self.get_graph_context(cypher)
+        except Exception as e:
+            print(f"[Neo4j ERROR] {e}")
+            context_rows = []
 
-    print("📊 Row count:", len(context_rows))
+        print("📊 Row count:", len(context_rows))
 
-    # Ground the model strictly in returned rows
-    context_json = json.dumps(context_rows, ensure_ascii=False, default=str)
+        # Ground the model strictly in returned rows
+        context_json = json.dumps(context_rows, ensure_ascii=False, default=str)
 
-    grounded_prompt = (
-        "You are given DATA from a graph database and a QUESTION.\n"
-        "Answer ONLY using the DATA. If not present, reply exactly: "
-        "\"I don't know based on the provided data.\"\n"
-        "Prefer bullet points. Use values exactly as shown.\n\n"
-        f"DATA:\n{context_json}\n\n"
-        f"QUESTION:\n{user_question}\n\n"
-        "ANSWER:"
-    )
+        grounded_prompt = (
+            "You are given DATA from a graph database and a QUESTION.\n"
+            "Answer ONLY using the DATA. If not present, reply exactly: "
+            "\"I don't know based on the provided data.\"\n"
+            "Prefer bullet points. Use values exactly as shown and don't exceed ROWS COUNT and don't repeat IDs.\n\n"
+            f"DATA:\n{context_json}\n\n"
+            f"IMAGE:\n{image_path}\n\n"
+            f"ROWS COUNT: {len(context_rows)}\n\n"
+            f"QUESTION:\n{user_question}\n\n"
+            "ANSWER:"
+        )
 
-    answer = rag.ollama_chat(model_name=llm_model, prompt=grounded_prompt)
-    print("\n📝 Answer:\n", answer)
+        answer = self.ollama_chat(model_name=llm_model, prompt=grounded_prompt, image_path = image_path)
+        print("\n📝 Answer:\n", answer)
 
 
 # === Main ====================================================================
 if __name__ == "__main__":
     try:
-        run()
+        
+
+        llm_model = "llama3.2-vision:11b"
+        neo4j_uri = "neo4j://127.0.0.1:7687"
+        neo4j_auth = ("neo4j", "riedelbau_model")
+
+        rag = VLMGraphRAGPipeline(neo4j_uri, neo4j_auth, llm_model)
+        
+
+        user_question = (
+        
+        "can you list all the doors (Max 15) in the building and their positions and IDs"
+        "if you don't know please say I don't know based on the provided data"
+        "Please don't provide any code just use the available data you have, in case the number doesn't match the data, don't try to fill in the gaps."
+         )
+
+        rag.run(llm_model,user_question)
+
     except Exception as e:
         print(f"[ERROR] {e}")
