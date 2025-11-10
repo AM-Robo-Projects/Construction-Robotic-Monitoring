@@ -194,7 +194,7 @@ def extract_graph_data(ifc_file_path):
 
 if __name__ == "__main__":
     # IMPORTANT: Replace with the actual path to your IFC file
-    ifc_file_path = "/home/grass/BIM_Navigation/src/RoboMonitoring/BIM_processing/ifc_models/Projekt1.ifc"
+    ifc_file_path = "/home/grass/BIM_Navigation/src/RoboMonitoring/BIM_processing/ifc_models/crane_hall_v10.ifc"
     
     try:
         nodes, relationships = extract_graph_data(ifc_file_path)
@@ -205,7 +205,7 @@ if __name__ == "__main__":
         }
         
         # --- Save JSON ---
-        output_json = "/home/grass/BIM_Navigation/src/RoboMonitoring/BIM_processing/converted_bim_models/bim_riedel_trial.json"
+        output_json = "/home/grass/BIM_Navigation/src/RoboMonitoring/BIM_processing/converted_bim_models/bim_crane_hall.json"
         
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(output_json), exist_ok=True)
@@ -215,7 +215,7 @@ if __name__ == "__main__":
         print(f"JSON saved to {output_json}")
         
         # --- Save CSV: Nodes ---
-        output_nodes = "/home/grass/BIM_Navigation/src/RoboMonitoring/BIM_processing/converted_bim_models/csv_converted_models/nodes_riedel.csv"
+        output_nodes = "/home/grass/BIM_Navigation/src/RoboMonitoring/BIM_processing/converted_bim_models/csv_converted_models/nodes_hall.csv"
         
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(output_nodes), exist_ok=True)
@@ -240,7 +240,7 @@ if __name__ == "__main__":
         print(f"Nodes CSV saved to {output_nodes}")
         
         # --- Save CSV: Relationships ---
-        output_edges = "/home/grass/BIM_Navigation/src/RoboMonitoring/BIM_processing/converted_bim_models/csv_converted_models/edges_riedel.csv"
+        output_edges = "/home/grass/BIM_Navigation/src/RoboMonitoring/BIM_processing/converted_bim_models/csv_converted_models/edges_hall.csv"
         
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(output_edges), exist_ok=True)

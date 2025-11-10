@@ -3,10 +3,7 @@ import json
 import ollama
 from typing import Any, Dict, List, Optional
 
-import os,sys 
-
 from langchain_ollama import OllamaLLM
-
 from BIM_processing.utils.cypher_query_utils import cypher_query_utils
 
 
@@ -38,50 +35,57 @@ class VLMGraphRAGPipeline:
         """Run Cypher and return a list of JSON-serializable rows (dicts)."""
         if not cypher_query:
             raise ValueError("Cannot run an empty query (Cypher generation returned empty).")
-
         with GraphDatabase.driver(self.neo4j_uri, auth=self.neo4j_auth) as driver:
             with driver.session() as session:
                 result = session.run(cypher_query, params or {})
-                rows: List[Dict[str, Any]] = []
-                for record in result:
-                    rows.append(record.data())
+                rows: List[Dict[str, Any]] = [record.data() for record in result]
                 return rows
 
     # === Ollama chat ===========================================================
-    def ollama_chat(self, model_name: str, prompt: str, image_path: Optional[str] = None) -> str:
+    def ollama_chat(self, model_name: str, prompt: str, image_path: Optional[str] = None):
+        """
+        Call Ollama chat with optional image input.
+        """
         try:
-            common = {
-                "model": model_name,
-                "options": {
-                    "temperature": 0,
-                    "num_predict": -1,  # allow full-length answers
-                },
-            }
+            messages = [{"role": "user", "content": prompt}]
             if image_path:
-                response = ollama.chat(**{
-                    **common,
-                    "messages": [{"role": "user", "content": prompt, "images": [image_path]}],
-                })
+                print(f"[INFO] Vision mode (path):....")
+                messages[0]["images"] = [image_path]  
+
+                response = ollama.chat(
+                    model=model_name,
+                    messages=messages,
+                    options={
+                        "temperature": 0,
+                        "num_predict": -1,
+                        "num_ctx": 16384
+                    },
+                )
+            
             else:
-                response = ollama.chat(**{
-                    **common,
-                    "messages": [{"role": "user", "content": prompt}],
-                })
+                print(f"[INFO] Text mode (no image)....")
+                messages[0]["content"] = prompt
+                
+                response = ollama.chat(
+                    model=model_name,
+                    messages=messages,
+                    options={
+                        "temperature": 0,
+                        "num_predict": -1,
+                        "num_ctx": 16384
+                    },
+                )
+
             return response.get("message", {}).get("content", "")
+        
+            
+        
         except Exception as e:
             print(f"[Ollama ERROR] {e}")
             return ""
 
-
-    def run(self,model,user_question,image_path: Optional[str] = None):
-        
+    def run(self, model, user_question, image_path: Optional[str] = None):
         llm_model = model
-        neo4j_uri = "neo4j://127.0.0.1:7687"
-        neo4j_auth = ("neo4j", "riedelbau_model")
-
-        #rag = VLMGraphRAGPipeline(neo4j_uri, neo4j_auth, llm_model)
-
-    
 
         cypher = self.gen_cypher(user_question)
         if not cypher:
@@ -98,45 +102,56 @@ class VLMGraphRAGPipeline:
 
         print("📊 Row count:", len(context_rows))
 
-        # Ground the model strictly in returned rows
+        # Ground the model strictly in returned rows for the DOORS part
         context_json = json.dumps(context_rows, ensure_ascii=False, default=str)
+        
+        print (f"[DEBUG]{context_json}[END_DEBUG]")
 
         grounded_prompt = (
-            "You are given DATA from a graph database and a QUESTION.\n"
-            "Answer ONLY using the DATA. If not present, reply exactly: "
-            "\"I don't know based on the provided data.\"\n"
-            "Prefer bullet points. Use values exactly as shown and don't exceed ROWS COUNT and don't repeat IDs.\n\n"
+            "You are given:\n"
+            "1) DATA from a graph database \n"
+            "2) an IMAGE\n\n"
+
+            "TASKS:\n"
+            "A) If the DATA does not contain the desired user queries, output exactly:\n"
+            '   "I don\'t know based on the provided data."\n'
+            "B) Image: Briefly describe what you see in the IMAGE (this part may use the image only).\n\n"
+
+            "OUTPUT FORMAT (use exactly these headers):\n"
+            "- DATA in bullet points (from DATA only):\n"
+            "- Image:\n\n"
+
+            "FALSE OUTPUT:\n"
+            "- Do NOT make up any data not contained in the DATA section.\n"
+            "- If DATA is empty or does not contain relevant info, say you don't know.\n\n"
+            
+        
             f"DATA:\n{context_json}\n\n"
-            f"IMAGE:\n{image_path}\n\n"
             f"ROWS COUNT: {len(context_rows)}\n\n"
-            f"QUESTION:\n{user_question}\n\n"
+            f"USER QUESTION:\n{user_question}\n\n"
             "ANSWER:"
         )
 
-        answer = self.ollama_chat(model_name=llm_model, prompt=grounded_prompt, image_path = image_path)
+        answer = self.ollama_chat(model_name=llm_model, prompt=grounded_prompt, image_path=image_path)
         print("\n📝 Answer:\n", answer)
 
 
 # === Main ====================================================================
 if __name__ == "__main__":
     try:
-        
-
         llm_model = "llama3.2-vision:11b"
         neo4j_uri = "neo4j://127.0.0.1:7687"
-        neo4j_auth = ("neo4j", "riedelbau_model")
+        neo4j_auth = ("neo4j", "CRANE_HALL")
 
         rag = VLMGraphRAGPipeline(neo4j_uri, neo4j_auth, llm_model)
-        
+
+        image_path = "workers.jpeg"
 
         user_question = (
-        
-        "can you list all the doors (Max 15) in the building and their positions and IDs"
-        "if you don't know please say I don't know based on the provided data"
-        "Please don't provide any code just use the available data you have, in case the number doesn't match the data, don't try to fill in the gaps."
-         )
+            "Please list all doors from the data provided, and describe what you see in the image ? "
+        )
 
-        rag.run(llm_model,user_question)
+        rag.run(llm_model, user_question,image_path)
 
     except Exception as e:
         print(f"[ERROR] {e}")
