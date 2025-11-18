@@ -155,31 +155,61 @@ class cypher_query_utils:
             if AutoGen:
                 schema = self.get_complete_graph_schema()
                 prompt = f"""
-    You are an expert in BIM (Building Information Modeling) and Neo4j graph databases.
+You are an expert in BIM (Building Information Modeling) and Neo4j graph databases.
 
-    I have imported an IFC building model into Neo4j with this schema:
+I have imported an IFC building model into Neo4j with this schema:
 
-    {schema}
+{schema}
 
-    Rules for query generation:
-    - Generate **exactly one** valid Neo4j Cypher query.
-    - Query must be read-only (MATCH / OPTIONAL MATCH / WHERE / WITH / RETURN / ORDER BY / LIMIT only).
-    - Do NOT use CREATE, MERGE, SET, DELETE, or APOC write procedures.
-    - If a LIMIT is not provided, append LIMIT 200.
-    - If geometry may be missing, handle it safely (e.g. WHERE exists(node.position_x)).
+**CRITICAL Rules for query generation:**
+1. Generate **exactly one** valid Neo4j Cypher query
+2. Query must be read-only (MATCH / OPTIONAL MATCH / WHERE / WITH / RETURN / ORDER BY only)
+3. Do NOT use CREATE, MERGE, SET, DELETE, DROP, or APOC write procedures
+4. **DO NOT ADD LIMIT CLAUSE** - return ALL matching results
+5. Handle missing geometry safely (e.g., WHERE exists(node.position))
+6. For spatial queries, calculate 2D Euclidean distance using: 
+   sqrt((node.position.x - x_value)^2 + (node.position.y - y_value)^2) AS distance
+7. Always ORDER BY distance ASC for spatial queries
+8. Use descriptive aliases (AS id, AS name, AS distance, etc.)
 
-    Here are example patterns you can reference (not required to reuse verbatim):
+**Example patterns (adapt as needed):**
 
-    MATCH p = ()-[:CONTAINS]->() RETURN p LIMIT 600;
-    MATCH (n:IfcDoor) RETURN n LIMIT 100;
-    MATCH (container)-[:HAS_OPENING]->(window:IfcWindow)
-    RETURN container.ifcType, window.ifcId, window.position_x, window.position_y, window.position_z LIMIT 200;
+Find all doors:
+```
+MATCH (d:IfcDoor)
+WHERE d.position IS NOT NULL
+RETURN d.GlobalId AS id, d.Name AS name, 
+       d.position.x AS x, d.position.y AS y
+ORDER BY name
+```
 
-    Now, write the appropriate Cypher query for the following request:
+Find doors within distance threshold:
+```
+MATCH (d:IfcDoor)
+WHERE d.position IS NOT NULL
+WITH d, sqrt((d.position.x - 5.0)^2 + (d.position.y - 3.0)^2) AS distance
+WHERE distance <= 2.0
+RETURN d.GlobalId AS id, d.Name AS name,
+       d.position.x AS x, d.position.y AS y,
+       distance
+ORDER BY distance ASC
+```
 
-    User question: "{query}"
+Find relationship patterns:
+```
+MATCH (container)-[:HAS_OPENING]->(door:IfcDoor)
+RETURN container.ifcType AS container_type,
+       door.GlobalId AS door_id,
+       door.Name AS door_name,
+       door.position.x AS x, door.position.y AS y
+ORDER BY door_name
+```
 
-    Return ONLY the Cypher query (no explanations).
+**Now generate the query for:**
+
+User question: "{query}"
+
+**Return ONLY the Cypher query (no explanations, no markdown, no comments).**
                 """
 
                 raw = self.llm.invoke(prompt).strip()

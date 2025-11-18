@@ -1,0 +1,12 @@
+# Request: Question to ask the VLM
+string question
+float64 robot_x
+float64 robot_y
+float64 threshold
+
+---
+
+# Response: VLM answer and detection status
+string answer
+bool door_detected
+int32 total_detections

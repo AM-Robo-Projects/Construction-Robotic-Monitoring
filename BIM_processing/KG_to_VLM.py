@@ -48,6 +48,7 @@ class VLMGraphRAGPipeline:
         """
         try:
             messages = [{"role": "user", "content": prompt}]
+            
             if image_path:
                 print(f"[INFO] Vision mode (path):....")
                 messages[0]["images"] = [image_path]  
@@ -56,7 +57,7 @@ class VLMGraphRAGPipeline:
                     model=model_name,
                     messages=messages,
                     options={
-                        "temperature": 0,
+                        "temperature": 1,
                         "num_predict": -1,
                         "num_ctx": 16384
                     },
@@ -70,7 +71,7 @@ class VLMGraphRAGPipeline:
                     model=model_name,
                     messages=messages,
                     options={
-                        "temperature": 0,
+                        "temperature": 1,
                         "num_predict": -1,
                         "num_ctx": 16384
                     },
@@ -84,7 +85,7 @@ class VLMGraphRAGPipeline:
             print(f"[Ollama ERROR] {e}")
             return ""
 
-    def run(self, model, user_question, image_path: Optional[str] = None):
+    def run(self, model, user_question, image_path: Optional[str] = None, robot_x: float = 0.0, robot_y: float = 0.0, threshold: float = 2.0):
         llm_model = model
 
         cypher = self.gen_cypher(user_question)
@@ -94,46 +95,48 @@ class VLMGraphRAGPipeline:
 
         print("🔎 Cypher:\n", cypher)
 
+        # Prepare parameters for parameterized queries
+        params = {
+            "robot_x": robot_x,
+            "robot_y": robot_y,
+            "threshold": threshold
+        }
+        
         try:
-            context_rows = self.get_graph_context(cypher)
+            context_rows = self.get_graph_context(cypher, params=params)
         except Exception as e:
             print(f"[Neo4j ERROR] {e}")
             context_rows = []
 
-        print("📊 Row count:", len(context_rows))
+        print(f"📊 Retrieved {len(context_rows)} rows from database")
 
         # Ground the model strictly in returned rows for the DOORS part
-        context_json = json.dumps(context_rows, ensure_ascii=False, default=str)
+        context_json = json.dumps(context_rows, ensure_ascii=False, indent=2, default=str)
         
-        print (f"[DEBUG]{context_json}[END_DEBUG]")
+        print(f"[DEBUG] Context preview (first 500 chars):\n{context_json[:500]}...\n[END_DEBUG]")
 
         grounded_prompt = (
-            "You are given:\n"
-            "1) DATA from a graph database \n"
-            "2) an IMAGE\n\n"
-
-            "TASKS:\n"
-            "A) If the DATA does not contain the desired user queries, output exactly:\n"
-            '   "I don\'t know based on the provided data."\n'
-            "B) Image: Briefly describe what you see in the IMAGE (this part may use the image only).\n\n"
-
-            "OUTPUT FORMAT (use exactly these headers):\n"
-            "- DATA in bullet points (from DATA only):\n"
-            "- Image:\n\n"
-
-            "FALSE OUTPUT:\n"
-            "- Do NOT make up any data not contained in the DATA section.\n"
-            "- If DATA is empty or does not contain relevant info, say you don't know.\n\n"
-            
-        
-            f"DATA:\n{context_json}\n\n"
-            f"ROWS COUNT: {len(context_rows)}\n\n"
-            f"USER QUESTION:\n{user_question}\n\n"
-            "ANSWER:"
+            "You are provided with CONTEXT from a Neo4j graph database and an IMAGE. "
+            "Answer the question based STRICTLY on the CONTEXT and what you can see in the IMAGE. "
+            "The CONTEXT contains ALL matching results from the database - do not assume there are more. "
+            "Do NOT invent, infer, or fill gaps beyond what is provided. "
+            "If CONTEXT is insufficient, reply exactly: \"I don't know based on the provided data.\"\n\n"
+            f"DATABASE CONTEXT ({len(context_rows)} results):\n{context_json}\n\n"
+            f"QUESTION: {user_question}\n\n"
+            "Provide a structured answer with:\n"
+            "1. Detection Result: YES or NO\n"
+            "2. Visual Evidence: What you see in the image\n"
+            "3. Database Evidence: List ALL items from the context with their properties (use exact IDs from context)\n"
+            "4. Reasoning: How the evidence supports your answer\n"
+            "5. Confidence: High/Medium/Low\n\n"
+            "Answer:"
         )
+        
 
         answer = self.ollama_chat(model_name=llm_model, prompt=grounded_prompt, image_path=image_path)
         print("\n📝 Answer:\n", answer)
+        
+        return answer
 
 
 # === Main ====================================================================

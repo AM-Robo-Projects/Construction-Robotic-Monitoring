@@ -26,10 +26,10 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            # Add your nodes here in format:
-            # 'node_executable_name = package_name.script_name:main'
-            # Example:
+            # VLM service node (main server)
             'ros_vlm_node = ros2_nodes.ros2_vlm:main',
+            # VLM client (for testing)
+            'vlm_client = ros2_nodes.vlm_client:main',
         ],
     },
 )

@@ -10,6 +10,7 @@ from rclpy.node import Node
 import cv2
 import numpy as np
 from sensor_msgs.msg import Image
+from nav_msgs.msg import Odometry
 from cv_bridge import CvBridge
 
 from neo4j.exceptions import CypherSyntaxError
@@ -17,33 +18,43 @@ from neo4j.exceptions import CypherSyntaxError
 from BIM_processing.KG_to_VLM import VLMGraphRAGPipeline
 import base64
 
+# Import the custom service (will be generated after build)
+from ros2_nodes.srv import VLMQuery
+
 class MyNode(Node):
     def __init__(self):
-        super().__init__('my_node')
-        self.get_logger().info('Node has been started!')
+        super().__init__('vlm_service_node')
+        self.get_logger().info('VLM Service Node has been started!')
 
-        # Subscriptions (Isaac Sim default)
-        self.create_subscription(Image, "/rgb", self.image_callback, 10)
-        # Gazebo example:
-        # self.create_subscription(Image, "/camera/image_raw", self.image_callback, 10)
+        # Image subscription to keep latest frame
+        self.create_subscription(Image, "/camera_face_camera/image_raw", self.image_callback, 10)
+        
+        # Odometry subscription for ground truth position (p3d plugin)
+        self.create_subscription(Odometry, "/odom", self.odom_callback, 10)
+        
+        # Create service
+        self.srv = self.create_service(VLMQuery, 'vlm_query', self.handle_vlm_query)
 
         self.bridge = CvBridge()
         self.llm_model = "llama3.2-vision:11b"
 
-        #neo4j_auth = ("neo4j", "kg_bim_cranehall") , neo4j_auth=("neo4j", "riedelbau_model")
-
-        self.vlm_cli = VLMGraphRAGPipeline(
-            neo4j_uri="neo4j://127.0.0.1:7687",
-            neo4j_auth = ("neo4j", "CRANE_HALL"),
-            llm_model=self.llm_model
-        )
-
-        # Keep only the latest frame (bytes)
-        self.vlm_queue = queue.Queue(maxsize=1)
-
-        # Background worker thread for VLM processing
-        self.processing_thread = threading.Thread(target=self.vlm_worker, daemon=True)
-        self.processing_thread.start()
+        # Keep only the latest frame
+        self.latest_frame = None
+        self.frame_lock = threading.Lock()
+        
+        # Keep latest robot position from odometry
+        self.robot_x = 0.0
+        self.robot_y = 0.0
+        self.odom_lock = threading.Lock()
+        
+        # Counter for positive door detections
+        self.door_detection_count = 0
+        
+        # VLM pipeline will be initialized on-demand
+        self.vlm_cli = None
+        
+        self.get_logger().info('VLM service ready. Call /vlm_query service to trigger VLM processing.')
+        self.get_logger().info('Listening to /odom for ground truth position')
 
     @staticmethod
     def bgr_to_rgb(cv_image: np.ndarray) -> np.ndarray:
@@ -80,57 +91,206 @@ class MyNode(Node):
 
     def image_callback(self, msg: Image):
         """
-        Fast callback: ROS Image -> OpenCV (BGR) -> RGB -> JPEG bytes, queue latest.
+        Fast callback: Store latest frame for service requests.
         """
         try:
             cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
             rgb_image = self.bgr_to_rgb(cv_image)
             base64_str = self.cv_image_to_jpeg_bytes(cv_image)
 
-
-            # Drop stale frame if worker hasn't consumed it yet
-            if not self.vlm_queue.empty():
-                try:
-                    _ = self.vlm_queue.get_nowait()
-                except queue.Empty:
-                    pass
-
-            try:
-                self.vlm_queue.put_nowait(base64_str)
-            except queue.Full:
-                self.get_logger().warn('Queue full, frame dropped')
+            # Store latest frame
+            with self.frame_lock:
+                self.latest_frame = base64_str
 
         except Exception as e:
             self.get_logger().error(f"Image callback failed: {e}")
             import traceback; traceback.print_exc()
 
-    def vlm_worker(self):
+    def odom_callback(self, msg: Odometry):
         """
-        Background loop: waits for JPEG bytes and calls the VLM pipeline with image_bytes.
+        Odometry callback: Store latest ground truth robot position from p3d plugin.
         """
-        self.get_logger().info('VLM worker thread started.')
+        try:
+            with self.odom_lock:
+                #switch to match the BIM model coordinate system
+                self.robot_x = -msg.pose.pose.position.y 
+                self.robot_y = msg.pose.pose.position.x
+            
+            # Log position occasionally (every 100 messages to avoid spam)
+            if not hasattr(self, '_odom_count'):
+                self._odom_count = 0
+            self._odom_count += 1
+            
+            if self._odom_count % 100 == 0:
+                self.get_logger().info(f'Robot position: ({self.robot_x:.3f}, {self.robot_y:.3f})')
+                
+        except Exception as e:
+            self.get_logger().error(f"Odometry callback failed: {e}")
+            import traceback; traceback.print_exc()
 
-        while rclpy.ok():
-            try:
-                base64_str = self.vlm_queue.get(timeout=1.0)  # <-- bytes, not ndarray
-                self.get_logger().info(f'Processing frame ({len(base64_str)} bytes JPEG) with VLM...')
+    def initialize_vlm_pipeline(self):
+        """Initialize VLM pipeline on-demand"""
+        if self.vlm_cli is None:
+            self.get_logger().info('Initializing VLM pipeline...')
+            self.vlm_cli = VLMGraphRAGPipeline(
+                neo4j_uri="neo4j://127.0.0.1:7687",
+                neo4j_auth=("neo4j", "CRANE_HALL"),
+                llm_model=self.llm_model
+            )
+            self.get_logger().info('VLM pipeline initialized.')
+    
+    def shutdown_vlm_pipeline(self):
+        """Shutdown VLM pipeline to free resources"""
+        if self.vlm_cli is not None:
+            self.get_logger().info('Shutting down VLM pipeline...')
+            # Close Neo4j connection if available
+            if hasattr(self.vlm_cli, 'close'):
+                self.vlm_cli.close()
+            self.vlm_cli = None
+            self.get_logger().info('VLM pipeline shut down.')
 
-                user_question = (
-                    "can you list the doors in the building with near positions to this positions (-7.563,0.15388,-0.4889), use euclidean distance to calculate the distance" 
-                )
 
-                # IMPORTANT: pass bytes via keyword the pipeline supports
-                self.vlm_cli.run(self.llm_model, user_question)
+    def handle_vlm_query(self, request, response):
+        """
+        Service callback: Process VLM query with latest frame.
+        If robot position is not provided in request (0.0, 0.0), use ground truth odometry.
+        """
+        # Use ground truth position if not specified in request
+        if request.robot_x == 0.0 and request.robot_y == 0.0:
+            with self.odom_lock:
+                query_x = self.robot_x
+                query_y = self.robot_y
+            self.get_logger().info(f'Using ground truth position from odometry: ({query_x:.3f}, {query_y:.3f})')
+        else:
+            query_x = request.robot_x
+            query_y = request.robot_y
+            self.get_logger().info(f'Using requested position: ({query_x:.3f}, {query_y:.3f})')
+        
+        try:
+            # Check if we have a frame
+            with self.frame_lock:
+                if self.latest_frame is None:
+                    response.answer = "No image available yet. Please wait for camera feed."
+                    response.door_detected = False
+                    response.total_detections = self.door_detection_count
+                    return response
+                
+                frame_to_process = self.latest_frame
+            
+            # Initialize VLM pipeline
+            self.initialize_vlm_pipeline()
+            
+            # Build a more flexible, multi-step prompt
+            if request.question:
+                user_question = request.question
+            else:
+                user_question = f"""You are a robot navigation assistant analyzing a building interior.
 
-                self.get_logger().info('VLM pipeline completed.')
+**Your Task:**
+Determine if there is a door visible or nearby based on BOTH the image you see AND the building database information.
 
-            except CypherSyntaxError as e:
-                self.get_logger().error(f"Cypher syntax error: {e}")
-            except queue.Empty:
-                continue
-            except Exception as e:
-                self.get_logger().error(f"Error in VLM worker: {e}")
-                import traceback; traceback.print_exc()
+**Current Context:**
+- Robot position: ({query_x:.3f}m, {query_y:.3f}m) [x, y coordinates in meters]
+- Search radius: {request.threshold}m
+
+**Step 1 - Database Query:**
+Query the building information model database for:
+- Fetch all doors in the database and their positions and distance from the Robot position you have above.
+- Filter doors within {request.threshold}m threshold
+- Note the position, ID, and properties of nearby doors
+
+**Step 2 - Visual Analysis:**
+Look at the provided camera image and identify:
+- Any visible doors or doorways in the field of view
+- Door frames, handles, or opening structures
+- The approximate direction/orientation of visible doors
+- Visual evidence that matches or contradicts the database information
+
+**Step 3 - Cross-Reference:**
+Compare what you see in the image with the database information:
+- Do visible doors match the expected locations from the database?
+- Are there doors in the database that should be visible but aren't in the image?
+- Are there visible doors that aren't in the database?
+
+**Your Answer Format:**
+1. **Detection Result:** YES or NO (start your answer with this)
+2. **Visual Evidence:** Describe what you see in the image
+3. **Database Evidence:** List doors found in database with their:
+   - ID from the database without changing or renumbering
+   - Distance from robot (in meters)
+   - Position (x, y)
+4. **Reasoning:** Explain your decision by combining visual and database evidence
+5. **Confidence:** High/Medium/Low based on agreement between image and data
+
+**Important Notes:**
+- All distances and positions are in METERS
+- Focus on 2D distance (ignore Z-axis/height)
+- Consider that doors might be partially visible or at an angle
+- The robot's camera has limited field of view
+- Database might have outdated or incomplete information
+
+Please analyze both sources of information and provide your assessment."""
+
+            self.get_logger().info(f'Processing query with enhanced prompt...')
+            
+            # Call VLM pipeline
+            vlm_answer = self.vlm_cli.run(
+                self.llm_model, 
+                user_question, 
+                frame_to_process,
+                robot_x=query_x,
+                robot_y=query_y,
+                threshold=request.threshold
+            )
+            
+            # Parse answer for door detection (look for YES/NO in first part of answer)
+            answer_str = str(vlm_answer).strip()
+            answer_upper = answer_str.upper()
+            
+            # More flexible parsing - check for YES or NO in the beginning
+            door_detected = False
+            if answer_upper.startswith('YES') or 'YES' in answer_upper[:50]:
+                door_detected = True
+            elif answer_upper.startswith('NO') or 'NO' in answer_upper[:50]:
+                door_detected = False
+            else:
+                # Fallback: look for keywords throughout answer
+                if any(keyword in answer_upper for keyword in ['DOOR VISIBLE', 'DOOR DETECTED', 'SEE A DOOR', 'DOOR PRESENT']):
+                    door_detected = True
+            
+            if door_detected:
+                self.door_detection_count += 1
+                self.get_logger().info(f'Door detected! Total detections: {self.door_detection_count}')
+            else:
+                self.get_logger().info(f'No door detected at position ({query_x:.3f}, {query_y:.3f})')
+            
+            # Set response
+            response.answer = answer_str
+            response.door_detected = door_detected
+            response.total_detections = self.door_detection_count
+            
+            self.get_logger().info(f'VLM processing completed. Door detected: {door_detected}')
+            
+            # Shutdown VLM to free resources
+            self.shutdown_vlm_pipeline()
+            
+        except CypherSyntaxError as e:
+            self.get_logger().error(f"Cypher syntax error: {e}")
+            response.answer = f"Error: Cypher syntax error - {str(e)}"
+            response.door_detected = False
+            response.total_detections = self.door_detection_count
+            self.shutdown_vlm_pipeline()
+            
+        except Exception as e:
+            self.get_logger().error(f"Error in VLM processing: {e}")
+            import traceback; traceback.print_exc()
+            response.answer = f"Error: {str(e)}"
+            response.door_detected = False
+            response.total_detections = self.door_detection_count
+            self.shutdown_vlm_pipeline()
+        
+        return response
+
 
 
 def main(args=None):
