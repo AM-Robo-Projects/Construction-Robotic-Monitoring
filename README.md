@@ -23,6 +23,7 @@ Construction-Robotic-Monitoring provides an end-to-end pipeline that:
 - ✅ Fast Neo4j querying via via Cypher and LLM  
 - ✅ LangChain-based integration with local LLMs (e.g., LLaMA 3, Qwen 2.5, Mistral)  
 - ✅ Visual and language-aware graph retrieval (VLM + Neo4j)  - GraphRAG
+- ✅ **Construction Progress Monitoring**: Detect discrepancies between As-Built (Visual) and As-Designed (BIM) states
 - ✅ Modular design compatible with ROS 2 nodes  
 - ✅ IFC analytics: extract walls, doors, windows, storeys, and spatial connectivity  
 
@@ -56,6 +57,18 @@ Construction-Robotic-Monitoring provides an end-to-end pipeline that:
 
 ---
 
+## 🚧 Construction Monitoring
+
+The system uses Vision-Language Models (VLMs) to compare the robot's visual feed against the BIM database to identify construction discrepancies:
+
+- **Missing Elements**: "There should be a door within this area however it isn't installed" (Database has it, Vision misses it).
+- **Unexpected Elements**: "There is a door that is wrongly installed or design change" (Vision sees it, Database misses it).
+- **Correct Installation**: Confirms when visual evidence matches the BIM model.
+
+This logic is configurable via `config/vlm_prompts.json`.
+
+---
+
 ## ⚙️ Installation
 
 ### Prerequisites
@@ -73,5 +86,6 @@ cd Construction-Robotic-Monitoring
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
 
 
