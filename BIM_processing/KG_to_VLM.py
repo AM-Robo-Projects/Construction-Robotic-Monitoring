@@ -95,7 +95,7 @@ class VLMGraphRAGPipeline:
 
         print("🔎 Cypher:\n", cypher)
 
-        # Prepare parameters for parameterized queries
+        # Prepare parameters for parameterized queries (kept for backward compatibility)
         params = {
             "robot_x": robot_x,
             "robot_y": robot_y,
@@ -108,7 +108,39 @@ class VLMGraphRAGPipeline:
             print(f"[Neo4j ERROR] {e}")
             context_rows = []
 
-        print(f"📊 Retrieved {len(context_rows)} rows from database")
+        print(f"📊 Retrieved {len(context_rows)} rows from database (before filtering)")
+        
+        # Post-process: Calculate distances and filter by threshold if spatial query
+        if robot_x != 0.0 or robot_y != 0.0:
+            filtered_rows = []
+            for row in context_rows:
+                # Check if this row has position data (x, y coordinates)
+                if 'x' in row and 'y' in row and row['x'] is not None and row['y'] is not None:
+                    try:
+                        door_x = float(row['x'])
+                        door_y = float(row['y'])
+                        # Calculate 2D Euclidean distance
+                        distance = ((door_x - robot_x) ** 2 + (door_y - robot_y) ** 2) ** 0.5
+                        # Add distance to the row
+                        row['distance'] = round(distance, 3)
+                        # Filter by threshold
+                        if distance <= threshold:
+                            filtered_rows.append(row)
+                    except (ValueError, TypeError) as e:
+                        print(f"⚠️ Could not calculate distance for row: {e}")
+                        continue
+                else:
+                    # No position data, include it anyway
+                    filtered_rows.append(row)
+            
+            # Sort by distance if we added distances
+            if filtered_rows and 'distance' in filtered_rows[0]:
+                filtered_rows.sort(key=lambda r: r.get('distance', float('inf')))
+            
+            context_rows = filtered_rows
+            print(f"📊 After spatial filtering: {len(context_rows)} rows within {threshold}m of robot position ({robot_x:.2f}, {robot_y:.2f})")
+
+        print(f"📊 Final result count: {len(context_rows)} rows")
 
         # Ground the model strictly in returned rows for the DOORS part
         context_json = json.dumps(context_rows, ensure_ascii=False, indent=2, default=str)

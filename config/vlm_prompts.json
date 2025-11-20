@@ -1,0 +1,105 @@
+{
+  "vlm_prompts": {
+    "door_detection_default": {
+      "description": "Default prompt for door detection using vision and database",
+      "system_context": "You are a robot navigation assistant analyzing a building interior for construction progress monitoring.",
+      "task": "Determine if there is a door visible or nearby based on BOTH the image you see AND the building database information, and report on installation status.",
+      "steps": [
+        {
+          "step": 1,
+          "name": "Database Query",
+          "instructions": [
+            "Query the building information model database for:",
+            "- Fetch all doors in the database and their positions and distance from the Robot position",
+            "- Filter doors within threshold distance",
+            "- Note the position, ID, and properties of nearby doors"
+          ]
+        },
+        {
+          "step": 2,
+          "name": "Visual Analysis",
+          "instructions": [
+            "Look at the provided camera image and identify:",
+            "- Any visible doors or doorways in the field of view",
+            "- Door frames, handles, or opening structures",
+            "- The approximate direction/orientation of visible doors",
+            "- Visual evidence that matches or contradicts the database information"
+          ]
+        },
+        {
+          "step": 3,
+          "name": "Cross-Reference",
+          "instructions": [
+            "Compare what you see in the image with the database information for construction monitoring:",
+            "- If you see a door and it is NOT in the database, state: 'there is a door that is wrongly installed or design change'",
+            "- If you DO NOT see a door but the database lists a door at this location, you MUST state: 'there should be a door within this area however it isn't installed'",
+            "- If the visual evidence matches the database, confirm the installation is correct."
+          ]
+        }
+      ],
+      "answer_format": {
+        "required_sections": [
+          {
+            "section": "Detection Result",
+            "instruction": "YES or NO (start your answer with this)"
+          },
+          {
+            "section": "Visual Evidence",
+            "instruction": "Describe what you see in the image"
+          },
+          {
+            "section": "Database Evidence",
+            "instruction": "List doors found in database with their ID, Distance (meters), and Position (x, y)"
+          },
+          {
+            "section": "Construction Status",
+            "instruction": "State whether the door is correctly installed, missing, or unexpected based on the cross-reference rules."
+          },
+          {
+            "section": "Reasoning",
+            "instruction": "Explain your decision by combining visual and database evidence"
+          },
+          {
+            "section": "Confidence",
+            "instruction": "High/Medium/Low based on agreement between image and data"
+          }
+        ]
+      },
+      "important_notes": [
+        "All distances and positions are in METERS",
+        "Focus on 2D distance (ignore Z-axis/height)",
+        "Consider that doors might be partially visible or at an angle",
+        "The robot's camera has limited field of view",
+        "Database might have outdated or incomplete information",
+        "Prioritize reporting discrepancies between visual reality and database expectations"
+      ]
+    },
+    "door_detection_simple": {
+      "description": "Simplified prompt for quick door detection",
+      "template": "Look at the image and check the database. Is there a door visible or within {threshold}m of robot position ({robot_x}, {robot_y})? Answer YES or NO first, then explain briefly."
+    },
+    "object_detection_generic": {
+      "description": "Generic object detection prompt",
+      "template": "You are analyzing a building interior. Detect {object_type} in the image and within {threshold}m of position ({robot_x}, {robot_y}). Provide: 1) Detection Result (YES/NO), 2) What you see, 3) Database matches, 4) Reasoning."
+    }
+  },
+  "parsing_keywords": {
+    "positive_detection": [
+      "DOOR VISIBLE",
+      "DOOR DETECTED", 
+      "SEE A DOOR",
+      "DOOR PRESENT",
+      "DOORS FOUND"
+    ],
+    "negative_detection": [
+      "NO DOOR",
+      "NO DOORS",
+      "DOOR NOT FOUND",
+      "NO VISIBLE DOOR"
+    ]
+  },
+  "default_values": {
+    "threshold": 2.0,
+    "confidence_threshold": 0.5
+  }
+}

@@ -16,6 +16,7 @@ from cv_bridge import CvBridge
 from neo4j.exceptions import CypherSyntaxError
 
 from BIM_processing.KG_to_VLM import VLMGraphRAGPipeline
+from BIM_processing.utils.prompt_manager import PromptManager
 import base64
 
 # Import the custom service (will be generated after build)
@@ -52,6 +53,14 @@ class MyNode(Node):
         
         # VLM pipeline will be initialized on-demand
         self.vlm_cli = None
+        
+        # Initialize prompt manager
+        try:
+            self.prompt_manager = PromptManager()
+            self.get_logger().info(f'Prompt manager loaded. Available prompts: {self.prompt_manager.list_available_prompts()}')
+        except Exception as e:
+            self.get_logger().error(f'Failed to load prompt manager: {e}')
+            self.prompt_manager = None
         
         self.get_logger().info('VLM service ready. Call /vlm_query service to trigger VLM processing.')
         self.get_logger().info('Listening to /odom for ground truth position')
@@ -180,58 +189,25 @@ class MyNode(Node):
             # Initialize VLM pipeline
             self.initialize_vlm_pipeline()
             
-            # Build a more flexible, multi-step prompt
+            # Build prompt from configuration or use custom question
             if request.question:
                 user_question = request.question
+                self.get_logger().info('Using custom question from request')
+            elif self.prompt_manager:
+                # Use prompt from configuration
+                user_question = self.prompt_manager.get_prompt(
+                    'door_detection_default',
+                    robot_x=query_x,
+                    robot_y=query_y,
+                    threshold=request.threshold
+                )
+                self.get_logger().info('Using prompt from configuration: door_detection_default')
             else:
-                user_question = f"""You are a robot navigation assistant analyzing a building interior.
+                # Fallback to simple prompt if prompt manager failed to load
+                user_question = f"Is there a door visible or within {request.threshold}m of robot position ({query_x:.3f}, {query_y:.3f})? Answer YES or NO first, then explain."
+                self.get_logger().warn('Using fallback prompt (prompt manager not available)')
 
-**Your Task:**
-Determine if there is a door visible or nearby based on BOTH the image you see AND the building database information.
-
-**Current Context:**
-- Robot position: ({query_x:.3f}m, {query_y:.3f}m) [x, y coordinates in meters]
-- Search radius: {request.threshold}m
-
-**Step 1 - Database Query:**
-Query the building information model database for:
-- Fetch all doors in the database and their positions and distance from the Robot position you have above.
-- Filter doors within {request.threshold}m threshold
-- Note the position, ID, and properties of nearby doors
-
-**Step 2 - Visual Analysis:**
-Look at the provided camera image and identify:
-- Any visible doors or doorways in the field of view
-- Door frames, handles, or opening structures
-- The approximate direction/orientation of visible doors
-- Visual evidence that matches or contradicts the database information
-
-**Step 3 - Cross-Reference:**
-Compare what you see in the image with the database information:
-- Do visible doors match the expected locations from the database?
-- Are there doors in the database that should be visible but aren't in the image?
-- Are there visible doors that aren't in the database?
-
-**Your Answer Format:**
-1. **Detection Result:** YES or NO (start your answer with this)
-2. **Visual Evidence:** Describe what you see in the image
-3. **Database Evidence:** List doors found in database with their:
-   - ID from the database without changing or renumbering
-   - Distance from robot (in meters)
-   - Position (x, y)
-4. **Reasoning:** Explain your decision by combining visual and database evidence
-5. **Confidence:** High/Medium/Low based on agreement between image and data
-
-**Important Notes:**
-- All distances and positions are in METERS
-- Focus on 2D distance (ignore Z-axis/height)
-- Consider that doors might be partially visible or at an angle
-- The robot's camera has limited field of view
-- Database might have outdated or incomplete information
-
-Please analyze both sources of information and provide your assessment."""
-
-            self.get_logger().info(f'Processing query with enhanced prompt...')
+            self.get_logger().info(f'Processing VLM query...')
             
             # Call VLM pipeline
             vlm_answer = self.vlm_cli.run(
@@ -247,6 +223,13 @@ Please analyze both sources of information and provide your assessment."""
             answer_str = str(vlm_answer).strip()
             answer_upper = answer_str.upper()
             
+            # Get parsing keywords from config
+            positive_keywords = []
+            negative_keywords = []
+            if self.prompt_manager:
+                positive_keywords = self.prompt_manager.get_parsing_keywords('positive_detection')
+                negative_keywords = self.prompt_manager.get_parsing_keywords('negative_detection')
+            
             # More flexible parsing - check for YES or NO in the beginning
             door_detected = False
             if answer_upper.startswith('YES') or 'YES' in answer_upper[:50]:
@@ -255,8 +238,10 @@ Please analyze both sources of information and provide your assessment."""
                 door_detected = False
             else:
                 # Fallback: look for keywords throughout answer
-                if any(keyword in answer_upper for keyword in ['DOOR VISIBLE', 'DOOR DETECTED', 'SEE A DOOR', 'DOOR PRESENT']):
+                if any(keyword in answer_upper for keyword in positive_keywords):
                     door_detected = True
+                elif any(keyword in answer_upper for keyword in negative_keywords):
+                    door_detected = False
             
             if door_detected:
                 self.door_detection_count += 1

@@ -29,19 +29,21 @@
     "keywords": ["window", "windows", "has_opening", "opening", "wall"],
     "cypher": "MATCH (container)-[rel:HAS_OPENING]->(window:IfcWindow)\nRETURN\n  elementId(container) AS containerElementId,\n  labels(container) AS containerLabels,\n  properties(container) AS containerProps,\n  elementId(rel) AS relElementId,\n  type(rel) AS relType,\n  properties(rel) AS relProps,\n  elementId(window) AS windowElementId,\n  labels(window) AS windowLabels,\n  properties(window) AS windowProps"
   },
+  
   {
   "name": "doors_has_opening_all_props",
   "description": "Find ALL doors with their positions and properties, including those with HAS_OPENING relationships and those without.",
   "keywords": ["door", "doors", "has_opening", "opening", "wall", "ifcdoor", "position", "distance", "robot", "location"],
-  "cypher": "MATCH (door:IfcDoor)\nWHERE door.position IS NOT NULL\nOPTIONAL MATCH (container)-[rel:HAS_OPENING]->(door)\nRETURN\n  elementId(door) AS doorElementId,\n  labels(door) AS doorLabels,\n  properties(door) AS doorProps,\n  door.position.x AS x,\n  door.position.y AS y,\n  elementId(container) AS containerElementId,\n  labels(container) AS containerLabels,\n  properties(container) AS containerProps,\n  elementId(rel) AS relElementId,\n  type(rel) AS relType,\n  properties(rel) AS relProps\nLIMIT 200"
+  "cypher": "MATCH (door:IfcDoor)\nWHERE door.position_x IS NOT NULL\nOPTIONAL MATCH (container)-[rel:HAS_OPENING]->(door)\nRETURN\n  elementId(door) AS doorElementId,\n  labels(door) AS doorLabels,\n  properties(door) AS doorProps,\n  door.position_x AS x,\n  door.position_y AS y,\n  elementId(container) AS containerElementId,\n  labels(container) AS containerLabels,\n  properties(container) AS containerProps,\n  elementId(rel) AS relElementId,\n  type(rel) AS relType,\n  properties(rel) AS relProps\nLIMIT 200"
   },
 
   {
     "name": "doors_spatial_search",
-    "description": "Find all doors with their positions for spatial analysis. This query returns ALL doors with coordinates, suitable for filtering by distance.",
-    "keywords": ["door", "doors", "position", "distance", "near", "robot", "location", "threshold", "meter", "coordinate", "spatial", "within"],
-    "cypher": "MATCH (door:IfcDoor)\nWHERE door.position_x IS NOT NULL AND door.position_y IS NOT NULL\nRETURN\n  elementId(door) AS elementId,\n  labels(door) AS labels,\n  properties(door) AS props,\n  door.position_x AS x,\n  door.position_y AS y,\n  door.name AS name,\n  door.ifcId AS ifcId\nORDER BY door.name\nLIMIT 200"
+    "description": "Find ALL doors with their positions. Returns door properties including position_x and position_y coordinates. Use this when asked about doors near robot position, doors within distance, or spatial queries about doors. The filtering by distance will be done after retrieving the data.",
+    "keywords": ["door","doors","position","distance","near","robot","location","threshold","meter","coordinate","spatial","within","nearby","closest"],
+    "cypher": "MATCH (door:IfcDoor)\nWHERE door.position_x IS NOT NULL AND door.position_y IS NOT NULL\nWITH door, toFloat(door.position_x) AS x, toFloat(door.position_y) AS y\nOPTIONAL MATCH (container)-[rel:HAS_OPENING]->(door)\nRETURN elementId(door) AS doorElementId, labels(door) AS doorLabels, properties(door) AS doorProps, x AS x, y AS y, elementId(container) AS containerElementId, labels(container) AS containerLabels, properties(container) AS containerProps, elementId(rel) AS relElementId, type(rel) AS relType, properties(rel) AS relProps\nORDER BY x, y\nLIMIT 200"
   },
+
 
   {
     "name": "count_ifc_elements",
