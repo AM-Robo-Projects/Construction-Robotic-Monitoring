@@ -3,6 +3,7 @@ import os
 import time
 import threading
 import queue
+import datetime
 
 import rclpy
 from rclpy.node import Node
@@ -158,6 +159,32 @@ class MyNode(Node):
             self.vlm_cli = None
             self.get_logger().info('VLM pipeline shut down.')
 
+    def save_vlm_response(self, x, y, answer):
+        """Save VLM response to a text file for reporting."""
+        try:
+            # Determine path to reports directory relative to this script
+            # Script is in src/RoboMonitoring/ros2_nodes/ros2_vlm.py
+            # We want src/RoboMonitoring/reports/vlm_responses.txt
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            report_dir = os.path.join(base_dir, 'reports')
+            
+            if not os.path.exists(report_dir):
+                os.makedirs(report_dir)
+            
+            file_path = os.path.join(report_dir, 'vlm_responses.txt')
+            
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            with open(file_path, 'a') as f:
+                f.write(f"--- VLM Report Entry ---\n")
+                f.write(f"Timestamp: {timestamp}\n")
+                f.write(f"Robot Position: ({x:.3f}, {y:.3f})\n")
+                f.write(f"Response:\n{answer}\n")
+                f.write(f"------------------------\n\n")
+                
+            self.get_logger().info(f"Saved VLM response to {file_path}")
+        except Exception as e:
+            self.get_logger().error(f"Failed to save VLM response: {e}")
 
     def handle_vlm_query(self, request, response):
         """
@@ -254,6 +281,9 @@ class MyNode(Node):
             response.door_detected = door_detected
             response.total_detections = self.door_detection_count
             
+            # Save response to file
+            self.save_vlm_response(query_x, query_y, answer_str)
+
             self.get_logger().info(f'VLM processing completed. Door detected: {door_detected}')
             
             # Shutdown VLM to free resources
